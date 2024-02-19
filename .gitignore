@@ -19,3 +19,4 @@ outputs/
 *.ipynb
 *.pt
 *.zip
+*.DS_Store
