@@ -93,20 +93,71 @@ def linear_matrix_schedule(num_diffusion_timesteps, matrix_height, matrix_width,
     for t in range(num_diffusion_timesteps):
         # Scale t from 0 to 1 as time progresses from 0 to timesteps-1
         time_factor = 1 - t / (num_diffusion_timesteps - 1)
-
-        # At t=0, we want the bias_matrix to be all 1's, 
+        # At t=0, we want the bias_matrix to be all 1's,
         # which is achieved when time_factor is 1
         # As t increases, the values in the matrix linearly decrease,
         # with the lowest value being epsilon
         lower_bound = time_factor * (1 - epsilon) + epsilon
 
-        bias_matrix = th.linspace(1, lower_bound, steps=matrix_height).view(1, 1, matrix_height, 1)
-        bias_matrix = bias_matrix.repeat(1, channels, 1, matrix_width)
+        preserved_length = matrix_height * np.min((time_factor, 0.8))  # todo: change 0.8 to a parameter
+        # set to long
+        preserved_length = int(preserved_length)
+
+        # Create a bias matrix for the current timestep
+        bias_matrix = th.zeros(matrix_height, dtype=th.float32)
+        bias_matrix[:preserved_length] = 1
+        bias_matrix[preserved_length:] = th.linspace(1, lower_bound, steps=matrix_height - preserved_length)
+
+        bias_matrix = bias_matrix.view(1, 1, matrix_height, 1).repeat(1, channels, 1, matrix_width)
 
         # Assign the bias matrix to the corresponding timestep in the tensor
         all_matrices[t] = bias_matrix
     
     return all_matrices
+
+
+def log_bmaps(map_: th.Tensor, name: str):
+    """
+    Log a B-maps matrix to wandb.
+
+    Args:
+        map_ (Tensor): The B-maps tensor of shape [T, 3, h, w] to log.
+        name (str): The name of the matrix.
+    """
+    # Ensure map is detached and moved to CPU
+    map_ = map_.detach().cpu()
+
+    # Calculate quantiles to index maps
+    T = map_.shape[0]
+    quantiles = th.linspace(0, 1, steps=10)
+
+    # Create a subplot: 1 row, 10 columns
+    fig, axes = plt.subplots(1, 10, figsize=(20, 2), sharex=True, sharey=True)
+    fig.subplots_adjust(right=0.8)  # Adjust subplot to make room for the colorbar
+
+    for i, q in enumerate(quantiles):
+        # Calculate the quantile index
+        idx = int(th.quantile(th.arange(T).float(), q).item())
+
+        # Select the map at the calculated index
+        selected_map = map_[idx, 0, :, :]  # Assuming we use the first channel for visualization
+
+        # Plot the map with the colormap
+        im = axes[i].imshow(selected_map, cmap='viridis', vmin=0, vmax=1)
+        axes[i].axis('off')  # Hide axis for better visualization
+
+    # Place a color bar on the right side of the last subplot
+    # Create an additional axes on the right for the colorbar
+    fig.subplots_adjust(right=0.87)  # Adjust the right parameter to give some space for the colorbar
+    cbar_ax = fig.add_axes([0.89, 0.15, 0.015, 0.7])  # Position for the colorbar
+    fig.colorbar(im, cax=cbar_ax)  # Add colorbar referencing the imshow object 'im
+
+    # plt.tight_layout()
+    # Log the plot to wandb
+    wandb.log({name: plt})
+
+    # Close the plot to free memory
+    plt.close(fig)
 
 
 class ModelMeanType(enum.Enum):
