@@ -20,3 +20,4 @@ outputs/
 *.pt
 *.zip
 *.DS_Store
+.idea/

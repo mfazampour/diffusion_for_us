@@ -35,6 +35,8 @@ def create_model_and_diffusion(cfg):
         rescale_timesteps=cfg.TRAIN.DIFFUSION.RESCALE_TIMESTEPS,
         rescale_learned_sigmas=cfg.TRAIN.DIFFUSION.RESCALE_LEARNED_SIGMAS,
         timestep_respacing=cfg.TRAIN.DIFFUSION.TIMESTEP_RESPACING,
+        image_size=cfg.TRAIN.IMG_SIZE,
+        b_map_min=cfg.TRAIN.DIFFUSION.B_MAP_MIN,
     )
     return model, diffusion
 
@@ -112,6 +114,8 @@ def create_gaussian_diffusion(
         rescale_timesteps=False,
         rescale_learned_sigmas=False,
         timestep_respacing="",
+        image_size=256,
+        b_map_min=1.0,
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
     print("Get a pre-defined beta schedule for Linear: ")
@@ -140,6 +144,8 @@ def create_gaussian_diffusion(
         ),
         loss_type=loss_type,
         rescale_timesteps=rescale_timesteps,
+        image_size=image_size,
+        b_map_min=b_map_min,
     )
 
 

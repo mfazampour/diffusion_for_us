@@ -135,7 +135,7 @@ class TrainLoop:
         # Initialize W&B
         # wandb.init(project="camus_remote", entity="marinadomin")
         # Optionally add a unique name or additional configuration for the run
-        wandb.init(project="modified_echo_from_noise", entity="marina-dominguez", name="First_trial_eps=1_training_1000Diffsteps_128x128")
+
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint

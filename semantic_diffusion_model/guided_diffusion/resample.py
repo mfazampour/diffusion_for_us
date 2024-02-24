@@ -56,8 +56,8 @@ class ScheduleSampler(ABC):
         indices = th.from_numpy(indices_np).long().to(device)
         weights_np = 1 / (len(p) * p[indices_np])
         weights = th.from_numpy(weights_np).float().to(device)
-        print("a tensor of timesteps indices: ", indices)
-        print("a tensor of weights to scale the resulting losses: ", weights)
+        # print("a tensor of timesteps indices: ", indices)
+        # print("a tensor of weights to scale the resulting losses: ", weights)
         return indices, weights
 
 

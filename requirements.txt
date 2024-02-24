@@ -17,4 +17,13 @@ scikit-image~=0.20.0
 deepspeed~=0.9.2
 blobfile~=2.0.2
 mpi4py~=3.1.4
-cv2~=4.5.4
+opencv-python
+wandb
+easydict
+blobfile
+# torch==1.13.1+cu116
+# torchaudio==0.13.1+cu116
+# torchvision==0.14.1+cu116
+mpi4py
+#### install mpi4py using conda install
+matplotlib

@@ -170,11 +170,14 @@ class GaussianDiffusion:
             model_var_type,
             loss_type,
             rescale_timesteps=False,
+            image_size=256,
+            b_map_min=1.0,
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
+        self.image_size = image_size
 
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
@@ -185,25 +188,25 @@ class GaussianDiffusion:
         self.num_timesteps = int(betas.shape[0]) 
 
         # pre-define B-maps
-        self.b_maps = linear_matrix_schedule(self.num_timesteps, 128, 128, 3, epsilon=1)
+        self.b_maps = linear_matrix_schedule(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
         # remember that in this code they process 3-channel ultrasound images (wrong, but that's what they do)
 
         alphas = 1.0 - betas
         self.alphas = alphas
         self.alphas_cumprod = np.cumprod(alphas, axis=0)
-        self.b_cumprod = np.cumprod(self.b_maps, axis=0)
+        self.b_cumprod = th.cumprod(self.b_maps, axis=0)
 
         self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1])
-        self.b_cumprod_prev = F.pad(self.b_cumprod[:-1], (0, 0, 0, 0, 0, 0, 1, 0), value=1.0)
+        self.b_cumprod_prev = F.pad(self.b_cumprod[:-1], (0, 0, 0, 0, 0, 0, 1, 0), value=1.0)  # todo: check this
 
         self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0)
-        self.b_cumprod_next = F.pad(self.b_cumprod[1:], (0, 0, 0, 0, 0, 0, 0, 1), value=1.0) 
+        self.b_cumprod_next = F.pad(self.b_cumprod[1:], (0, 0, 0, 0, 0, 0, 0, 1), value=1.0)  # todo: check this
 
         assert self.alphas_cumprod_prev.shape == (self.num_timesteps,)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
         self.sqrt_alphas_cumprod = np.sqrt(self.alphas_cumprod)
-        self.sqrt_b_cumprod = np.sqrt(self.b_cumprod)
+        self.sqrt_b_cumprod = th.sqrt(self.b_cumprod)
 
         # self.sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - self.alphas_cumprod) 
         # we don't need this one anymore
@@ -212,7 +215,12 @@ class GaussianDiffusion:
         # this one either
 
         self.sqrt_recip_alphas_cumprod = np.sqrt(1.0 / self.alphas_cumprod)
-        self.sqrt_recip_b_cumprod = np.sqrt(1.0 / self.b_cumprod)
+        self.sqrt_recip_b_cumprod = th.sqrt(1.0 / self.b_cumprod)
+
+        log_bmaps(self.b_maps, 'b_maps')
+        log_bmaps(self.b_cumprod, 'b_cumprod')
+        log_bmaps(self.b_cumprod_prev, 'b_cumprod_prev')
+        log_bmaps(self.b_cumprod_next, 'b_cumprod_next')
 
     def q_mean_variance(self, x_start, t):
         """
@@ -287,10 +295,11 @@ class GaussianDiffusion:
         # ---------------------------------------------------------------------------------------
 
         alphas_t = _extract_into_tensor(self.alphas, t, x_t.shape)
-        b_maps_t = _extract_into_B_tensor(self.b_maps, t)
         alphas_cumprod_prev_t = _extract_into_tensor(self.alphas_cumprod_prev, t, x_t.shape)
-        b_cumprod_prev_t = _extract_into_B_tensor(self.b_cumprod_prev, t)
         alphas_cumprod_t = _extract_into_tensor(self.alphas_cumprod, t, x_t.shape)
+
+        b_maps_t = _extract_into_B_tensor(self.b_maps, t)
+        b_cumprod_prev_t = _extract_into_B_tensor(self.b_cumprod_prev, t)
         b_cumprod_t = _extract_into_B_tensor(self.b_cumprod, t)
 
         posterior_mean_coef1_t = (
@@ -365,6 +374,14 @@ class GaussianDiffusion:
             model_output = model(x, self._scale_timesteps(t), y=model_kwargs['y'])
         else:
             model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+
+        if self.b_maps.device != x.device:
+            self.b_maps = self.b_maps.to(x.device)
+            self.b_cumprod_prev = self.b_cumprod_prev.to(x.device)
+            self.b_cumprod = self.b_cumprod.to(x.device)
+            self.sqrt_b_cumprod = self.sqrt_b_cumprod.to(x.device)
+            self.sqrt_recip_b_cumprod = self.sqrt_recip_b_cumprod.to(x.device)
+            self.b_cumprod_next = self.b_cumprod_next.to(x.device)
 
         # if 's' in model_kwargs and model_kwargs['s'] > 1.0:
         # if 's' in model_kwargs:
@@ -954,6 +971,14 @@ class GaussianDiffusion:
         #print("t: a batch of timestep indices: ", t)
         #print("noise: if specified, the specific Gaussian noise to try to remove: ", noise.shape)
 
+        if self.b_maps.device != x_start.device:
+            self.b_maps = self.b_maps.to(x_start.device)
+            self.b_cumprod_prev = self.b_cumprod_prev.to(x_start.device)
+            self.b_cumprod = self.b_cumprod.to(x_start.device)
+            self.sqrt_b_cumprod = self.sqrt_b_cumprod.to(x_start.device)
+            self.sqrt_recip_b_cumprod = self.sqrt_recip_b_cumprod.to(x_start.device)
+            self.b_cumprod_next = self.b_cumprod_next.to(x_start.device)
+
         x_t = self.q_sample(x_start, t, noise=noise)
         
         #print("q_sample applied: x_t ", x_t.shape)
@@ -1117,7 +1142,7 @@ def _extract_into_B_tensor(matrix_schedule, timesteps):
     :return: a tensor of shape [batch_size, channels, img_height, img_width]
     """
     #matrix is a tensor, i need it in the same device as timesteps
-    matrix_schedule = matrix_schedule.to(device=timesteps.device)
+    # matrix_schedule = matrix_schedule.to(device=timesteps.device)
     #timesteps device:  cuda:0
 
     return matrix_schedule[timesteps.long()]

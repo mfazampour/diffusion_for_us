@@ -115,7 +115,7 @@ def load_data(cfg, single_image_path=None):
     print("Len of the timesteps:", cfg.TRAIN.DIFFUSION_STEPS)
 
     if cfg.TRAIN.IS_TRAIN:
-        batch_size = 1 # cfg.TRAIN.BATCH_SIZE
+        batch_size = cfg.TRAIN.BATCH_SIZE
         if cfg.TRAIN.DETERMINISTIC:
             loader = DataLoader(
                 dataset, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True
@@ -125,15 +125,10 @@ def load_data(cfg, single_image_path=None):
                 dataset, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True
             )
     else:
-        batch_size = 1 #cfg.TEST.BATCH_SIZE
-        if cfg.TEST.DETERMINISTIC:
-            loader = DataLoader(
-                dataset, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True
-            )
-        else:
-            loader = DataLoader(
-                dataset, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True
-            )
+        batch_size = cfg.TEST.BATCH_SIZE
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True
+        )
 
     while True:
         yield from loader
