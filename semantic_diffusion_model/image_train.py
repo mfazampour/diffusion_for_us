@@ -47,9 +47,11 @@ def main():
 
     update_config(args, cfg)
 
-    exp_name = f"dataset_{cfg.DATASETS.DATASET_MODE}-b_map_min_{cfg.TRAIN.DIFFUSION.B_MAP_MIN}-img_size_{cfg.TRAIN.IMG_SIZE}"
+    exp_name = f"dataset_{cfg.DATASETS.DATASET_MODE}-b_map_min_{cfg.TRAIN.DIFFUSION.B_MAP_MIN}-img_size_{cfg.TRAIN.IMG_SIZE}-lr_{cfg.TRAIN.LR}-diffusion_steps_{cfg.TRAIN.DIFFUSION_STEPS}"
     cfg.TRAIN.SAVE_DIR = os.path.join(cfg.TRAIN.SAVE_DIR, exp_name, datetime.now().strftime("%Y-%m-%d"))
     cfg.DATASETS.SAVE_DIR = cfg.TRAIN.SAVE_DIR
+    cfg.TRAIN.CHECKPOINT_DIR = cfg.TRAIN.SAVE_DIR
+
     if not os.path.exists(cfg.TRAIN.SAVE_DIR):
         os.makedirs(cfg.TRAIN.SAVE_DIR, exist_ok=True)
 

@@ -29,9 +29,6 @@ import os
 
 import wandb
 
-# Initialize wandb
-wandb.init(project="modified_echo_from_noise_inference", name="inference_eps=1_128_img_size")
-
 def get_args_from_command_line():
     parser = ArgumentParser(description='Parser of Semantic Diffusion Model')
     parser.add_argument('--datadir',
@@ -50,6 +47,10 @@ def main():
     args = get_args_from_command_line()
 
     update_config(args, cfg)
+
+    exp_name = f"inference_dataset_{cfg.DATASETS.DATASET_MODE}-b_map_min_{cfg.TRAIN.DIFFUSION.B_MAP_MIN}-img_size_{cfg.TRAIN.IMG_SIZE}-checkpoint_{cfg.TRAIN.RESUME_CHECKPOINT.split('/')[-1]}"
+    # Initialize wandb
+    wandb.init(project="modified_echo_from_noise", name=exp_name, config=cfg)
 
     # deepspeed.init_distributed()
     dist_util.setup_dist()
@@ -118,9 +119,9 @@ def main():
         model_kwargs['s'] = cfg.TEST.S
 
         sample_fn = (
-            diffusion.p_sample_loop if not cfg.TEST.USE_DDIM else diffusion.ddim_sample_loop
+            diffusion.p_sample_loop_with_snapshot if not cfg.TEST.USE_DDIM else diffusion.ddim_sample_loop
         )
-        inference_img = sample_fn(
+        inference_img, snapshots = sample_fn(
             model,
             (cfg.TEST.BATCH_SIZE, 3, src_img.shape[2], src_img.shape[3]),
             clip_denoised=cfg.TEST.CLIP_DENOISED,
@@ -169,25 +170,9 @@ def main():
 
         #src_img: torch.Size([1, 3, 128, 128]),label_img: torch.Size([1, 128, 128]),inference_img: torch.Size([1, 3, 128, 128])
         # Unpack the figure and axes from the tuple returned by plt.subplots()
-        fig, axs = plt.subplots(3, cfg.TEST.BATCH_SIZE, figsize=(15, 15))
 
-        for k in range(cfg.TEST.BATCH_SIZE):
-            axs[0, k].imshow(src_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
-            axs[0, k].set_title("Source Image")
-            axs[0, k].axis('off')
+        log_images(inference_img, label_img, src_img, snapshots=snapshots)
 
-            axs[1, k].imshow(label_img[k, ...].cpu().detach().numpy(), cmap='gray')
-            axs[1, k].set_title("Label Image")
-            axs[1, k].axis('off')
-
-            axs[2, k].imshow(inference_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
-            axs[2, k].set_title("Inference Image")
-            axs[2, k].axis('off')
-
-        plt.tight_layout()
-        wandb.log({"source-label-inference": plt})
-        plt.close()
-        
         if len(all_samples) * cfg.TEST.BATCH_SIZE > cfg.TEST.NUM_SAMPLES:
             break
 
@@ -196,6 +181,49 @@ def main():
 
     # Finish the W&B run
     wandb.finish()
+
+
+def log_images(inference_img, label_img, src_img, snapshots=None):
+
+    if snapshots is None:
+        snapshots = {}
+    num_rows = 3 + len(snapshots)
+    num_cols = inference_img.shape[0]
+    # Base size for each subplot + some padding
+    base_width = 4
+    base_height = 4
+    fig_width = num_cols * base_width + 2
+    fig_height = num_rows * base_height
+
+    fig, axs = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height))
+    fig.suptitle('Diffusion Model Results', fontsize=16)
+
+    for k in range(num_cols):
+        axs[0, k].imshow(src_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
+        axs[0, k].axis('off')
+
+        axs[1, k].imshow(inference_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
+        axs[1, k].axis('off')
+
+        axs[2, k].imshow(label_img[k, ...].cpu().detach().numpy(), cmap='gray')
+        axs[2, k].axis('off')
+
+        for i, snap in enumerate(snapshots):
+            axs[i + 3, k].imshow(snapshots[snap][k, 0, ...].cpu().detach().numpy(), cmap='gray')
+            axs[i + 3, k].axis('off')
+
+    # Set vertical labels for each row outside the loop
+    axs[0, 0].set_title("Source Image")
+    axs[1, 0].set_title("Inference Image")
+    axs[2, 0].set_title("Label Image", pad=20)
+    for i, snap in enumerate(snapshots):
+        axs[i + 3, 0].set_title(f"Snapshot {snap}")
+
+    plt.tight_layout(rect=[0, 0.0, 1, 0.95])  # Adjust the layout to leave space for the suptitle
+    # Assuming wandb.log is used to log images to Weights & Biases
+    wandb.log({"source-inference": plt})
+    plt.close()
+
 
 def generate_combined_imgs(src_in_img, label_in_img, inference_in_img):
     overlayed_label = label2rgb(label=label_in_img[:, :, 0], image=inference_in_img,
