@@ -1,5 +1,6 @@
 # this script has been modified to incorporate w&b 
 # 07/11/2023
+from typing import List, Dict
 
 import wandb
 
@@ -239,11 +240,11 @@ class TrainLoop:
             # print(f"Conditional label map size: {cond['label'].size()}") # Label size: torch.Size([1, 1, 128, 128])
             # print(f"Og label size: {cond['label_ori'].size()}") Og label size: torch.Size([1, 128, 128])
             # print(f"Path: {cond['path']}")  Path: ['augmented_camus/2CH_ED_augmented/images/training/patient0142_2CH_ED_training_4.png']
-            
+
             cond = self.preprocess_input(cond)
             # print(f"Cond: {cond.keys()}") Cond: dict_keys(['y'])
             # print(f"Condition, label map : {cond['y'].size()}") # Cond: torch.Size([1, 5, 128, 128])
-            
+
             """
             # print the image that we are training on (batch = [1,3,128,128])
             fig, axs = plt.subplots(2, max(batch.shape[1], cond['y'].shape[1]), figsize=(15, 6))
@@ -267,7 +268,7 @@ class TrainLoop:
             plt.tight_layout()
             # wandb.log({"Image with Label": plt})
             """
-            
+
             self.run_step(batch, cond) # Here we are running one step!! 
             # a step in the sense that we are running the forward and backward pass
             # and we are optimizing the loss function
@@ -281,15 +282,17 @@ class TrainLoop:
 
             if self.step % self.log_interval == 0:
                 print(self.step, " steps completed, let's check the logger")
-                logger.dumpkvs() 
-            
+                logger.dumpkvs()
+
             if self.step % self.save_interval == 0 and self.step > 0:
                 print("Saving step")
                 logger.log("Saving step")
                 self.save()
+                self.sanity_test(batch=batch, device=dist_util.dev(), cond=cond)
                 # Run for a finite amount of time in integration tests.
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
+
             self.step += 1
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
@@ -348,13 +351,13 @@ class TrainLoop:
 
             # we are sampling from the diffusion process
             # we are sampling the timesteps and the weights
-            print("Sampling from the diffusion process: timestep and weights")
+            # print("Sampling from the diffusion process: timestep and weights")
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
             # print(" Current timestep (?) t: ", t) Current timestep (?) t:  tensor([363], device='cuda:0')
             # print("weights: ", weights) weights:  tensor([1.], device='cuda:0')
             
-            print("Computing losses: mse, vb and weighted sum of both")
+            # print("Computing losses: mse, vb and weighted sum of both")
 
             compute_losses = functools.partial(
                 self.diffusion.training_losses,
@@ -472,8 +475,24 @@ class TrainLoop:
 
         # Save model checkpoint to W&B
         if dist.get_rank() == 0:
-            wandb.save(os.path.join(self.output_dir, f"model{(self.step + self.resume_step):06d}.pt"))
+            # wandb.save(os.path.join(self.output_dir, f"model{(self.step + self.resume_step):06d}.pt"))
             logger.log("Saved model checkpoint to W&B, model: ", f"model{(self.step + self.resume_step):06d}.pt")
+
+
+    def sanity_test(self, batch, device, cond):
+        src_img = ((batch + 1.0) / 2.0).to(device)
+        # label_img = (cond['label_ori'].float())
+        model_kwargs = cond
+
+        inference_img, snapshots = self.diffusion.p_sample_loop_with_snapshot(
+            self.model,
+            (batch.shape[0], 3, batch.shape[2], batch.shape[3]),
+            model_kwargs=model_kwargs,
+            progress=True
+        )
+
+        inference_img = (inference_img + 1) / 2.0
+        log_images(inference_img=inference_img, src_img=src_img, snapshots=snapshots)
 
 
     def preprocess_input(self, data):
@@ -563,3 +582,36 @@ def log_loss_dict(diffusion, ts, losses):
             #wandb.log({f"{key}_q{quartile}": sub_loss})
 
             
+def log_images(inference_img, src_img, snapshots):
+    num_rows = 2 + len(snapshots)
+    num_cols = inference_img.shape[0]
+    # Base size for each subplot + some padding
+    base_width = 4
+    base_height = 4
+    fig_width = num_cols * base_width + 2
+    fig_height = num_rows * base_height
+
+    fig, axs = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height))
+    fig.suptitle('Diffusion Model Results', fontsize=16)
+
+    for k in range(num_cols):
+        axs[0, k].imshow(src_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
+        axs[0, k].axis('off')
+
+        axs[1, k].imshow(inference_img[k, 0, ...].cpu().detach().numpy(), cmap='gray')
+        axs[1, k].axis('off')
+
+        for i, snap in enumerate(snapshots):
+            axs[i+2, k].imshow(snapshots[snap][k, 0, ...].cpu().detach().numpy(), cmap='gray')
+            axs[i+2, k].axis('off')
+
+    # Set vertical labels for each row outside the loop
+    axs[0, 0].set_title("Source Image")
+    axs[1, 0].set_title("Inference Image")
+    for i, snap in enumerate(snapshots):
+        axs[i+2, 0].set_title(f"Snapshot {snap}")
+
+    plt.tight_layout(rect=[0, 0.0, 1, 0.95])  # Adjust the layout to leave space for the suptitle
+    # Assuming wandb.log is used to log images to Weights & Biases
+    wandb.log({"source-inference": plt})
+    plt.close()

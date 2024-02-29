@@ -5,11 +5,12 @@ import random
 
 import blobfile as bf
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from mpi4py import MPI
 from torch.utils.data import DataLoader, Dataset
 
 from PIL import Image
+import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 
 """
@@ -27,6 +28,7 @@ class SingleImageDataset(Dataset):
             image = self.transform(image)
         return image
 """
+
 
 def load_data(cfg, single_image_path=None):
     """
@@ -70,9 +72,11 @@ def load_data(cfg, single_image_path=None):
         if cfg.TEST.INFERENCE_ON_TRAIN and not cfg.TRAIN.IS_TRAIN:  # inference on train in one go to make synthetic image generation easier
             all_files = glob.glob(os.path.join(cfg.DATASETS.DATADIR, 'images', 'training', '*.png'))
             all_files = all_files + glob.glob(os.path.join(cfg.DATASETS.DATADIR, 'images', 'validation', '*.png'))
+            all_files.sort()
             classes = glob.glob(os.path.join(cfg.DATASETS.DATADIR, 'sector_annotations', 'training', '*.png'))
             classes = classes + glob.glob(
                 os.path.join(cfg.DATASETS.DATADIR, 'sector_annotations', 'validation', '*.png'))
+            classes.sort()
             instances = None
         else:
             print("The images are in directory:", os.path.join(cfg.DATASETS.DATADIR, 'images', 'training'))
@@ -83,6 +87,83 @@ def load_data(cfg, single_image_path=None):
                 os.path.join(cfg.DATASETS.DATADIR, 'sector_annotations',
                              'training' if cfg.TRAIN.IS_TRAIN else 'validation'))
             instances = None
+    elif cfg.DATASETS.DATASET_MODE == 'camus_full_2CH':
+        path1 = os.path.join(cfg.DATASETS.DATADIR, '2CH_ED_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2 = os.path.join(cfg.DATASETS.DATADIR, '2CH_ES_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path1_label = os.path.join(cfg.DATASETS.DATADIR, '2CH_ED_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2_label = os.path.join(cfg.DATASETS.DATADIR, '2CH_ES_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        print("The images are in directories:", path1, path2)
+        all_files = _list_image_files_recursively(path1) + _list_image_files_recursively(path2)
+        print("The labels are in directory:", path1_label, path2_label)
+        classes = _list_image_files_recursively(path1_label) + _list_image_files_recursively(path2_label)
+        instances = None
+    elif cfg.DATASETS.DATASET_MODE == 'camus_full_4CH':
+        path1 = os.path.join(cfg.DATASETS.DATADIR, '4CH_ED_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2 = os.path.join(cfg.DATASETS.DATADIR, '4CH_ES_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path1_label = os.path.join(cfg.DATASETS.DATADIR, '4CH_ED_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2_label = os.path.join(cfg.DATASETS.DATADIR, '4CH_ES_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        print("The images are in directories:", path1, path2)
+        all_files = _list_image_files_recursively(path1) + _list_image_files_recursively(path2)
+        print("The labels are in directory:", path1_label, path2_label)
+        classes = _list_image_files_recursively(path1_label) + _list_image_files_recursively(path2_label)
+        instances = None
+    elif cfg.DATASETS.DATASET_MODE == 'camus_full_2CH_4CH':
+        path1 = os.path.join(cfg.DATASETS.DATADIR, '2CH_ED_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2 = os.path.join(cfg.DATASETS.DATADIR, '2CH_ES_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path3 = os.path.join(cfg.DATASETS.DATADIR, '4CH_ED_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path4 = os.path.join(cfg.DATASETS.DATADIR, '4CH_ES_augmented', 'images',
+                             'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path1_label = os.path.join(cfg.DATASETS.DATADIR, '2CH_ED_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path2_label = os.path.join(cfg.DATASETS.DATADIR, '2CH_ES_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path3_label = os.path.join(cfg.DATASETS.DATADIR, '4CH_ED_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        path4_label = os.path.join(cfg.DATASETS.DATADIR, '4CH_ES_augmented', 'sector_annotations',
+                                   'training' if cfg.TRAIN.IS_TRAIN else 'validation')
+        print("The images are in directories:", path1, path2, path3, path4)
+        all_files = _list_image_files_recursively(path1) + _list_image_files_recursively(
+            path2) + _list_image_files_recursively(path3) + _list_image_files_recursively(path4)
+        print("The labels are in directory:", path1_label, path2_label, path3_label, path4_label)
+        classes = _list_image_files_recursively(path1_label) + _list_image_files_recursively(
+            path2_label) + _list_image_files_recursively(path3_label) + _list_image_files_recursively(path4_label)
+        instances = None
+    elif cfg.DATASETS.DATASET_MODE == 'thyroid':
+        # this should be the base path : "/home/data/farid/THYROID_MULTILABEL_2D_3D/imagesTrain/2D"
+        all_files = []
+        classes = []
+        for i in range(0, 29, 2):
+            folder = os.path.join(cfg.DATASETS.DATADIR, f"{str(i).zfill(2)}")
+            images = sorted(glob.glob(os.path.join(folder, "images", "*.png")))
+            labels = [os.path.join(folder, "labels", os.path.basename(image).replace("images", "labels")) for image in
+                      images]
+
+            for image, label in zip(images, labels):
+                # if image or label is not there, then skip
+                if not os.path.exists(image) or not os.path.exists(label):
+                    continue
+                all_files.append(image)
+                classes.append(label)
+
+        instances = None
+    elif cfg.DATASETS.DATASET_MODE == 'liver':
+        # this should be the base path : "/home/data/farid/simulated_images_cs_Demir_Yichen_Daniel/"
+        all_files = _list_image_files_recursively(os.path.join(cfg.DATASETS.DATADIR, 'filtered'))
+        # we have only the fan mask as the label, it is the same for all the images
+        classes = [os.path.join(cfg.DATASETS.DATADIR, "fan_mask.png") for _ in all_files]
+        instances = None
+
     elif cfg.DATASETS.DATASET_MODE == 'celeba':
         # The edge is computed by the instances.
         # However, the edge get from the labels and the instances are the same on CelebA.
@@ -96,7 +177,7 @@ def load_data(cfg, single_image_path=None):
     else:
         raise NotImplementedError('{} not implemented'.format(cfg.DATASETS.DATASET_MODE))
 
-    print("Len of Dataset:", len(all_files))
+    print("Len of Dataset:", len(all_files), len(classes))
 
     dataset = ImageDataset(
         cfg.DATASETS.DATASET_MODE,
@@ -118,16 +199,16 @@ def load_data(cfg, single_image_path=None):
         batch_size = cfg.TRAIN.BATCH_SIZE
         if cfg.TRAIN.DETERMINISTIC:
             loader = DataLoader(
-                dataset, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True
+                dataset, batch_size=batch_size, shuffle=False, num_workers=cfg.TRAIN.NUM_WORKERS, drop_last=True
             )
         else:
             loader = DataLoader(
-                dataset, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True
+                dataset, batch_size=batch_size, shuffle=True, num_workers=cfg.TRAIN.NUM_WORKERS, drop_last=True
             )
     else:
         batch_size = cfg.TEST.BATCH_SIZE
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=True
+            dataset, batch_size=batch_size, shuffle=True, num_workers=cfg.TRAIN.NUM_WORKERS, drop_last=True
         )
 
     while True:
@@ -144,6 +225,48 @@ def _list_image_files_recursively(data_dir):
         elif bf.isdir(full_path):
             results.extend(_list_image_files_recursively(full_path))
     return results
+
+
+def random_crop_and_resize_image_label(image, label, resize_to=None):
+    """
+    Randomly crops the image and label to 80% or 90% of their original size from sides or bottom,
+    keeping the top part aligned, and then resizes them back to the original size or to a specified size.
+
+    Args:
+    - image (PIL.Image): The input image to augment.
+    - label (PIL.Image): The corresponding label image to augment.
+    - resize_to (tuple, optional): The size to which the image and label should be resized. If None, uses the original size.
+
+    Returns:
+    - PIL.Image: The augmented and resized image.
+    - PIL.Image: The augmented and resized label with nearest neighbor interpolation.
+    """
+    original_width, original_height = image.size
+    resize_to = resize_to if resize_to else (original_width, original_height)
+
+    # Choose a random crop size: 80% or 90% of the original dimensions
+    crop_size = random.uniform(0.8, 0.95)
+    new_height = int(original_height * crop_size)
+
+    # Randomly choose the bottom crop boundary if cropping is from the bottom
+    bottom_crop = original_height - new_height
+
+    # Randomly choose how much to crop from the left (the rest will be cropped from the right)
+    crop_width = int(original_width * crop_size)
+    left_crop = random.randint(0, original_width - crop_width)
+
+    # Define the crop box
+    crop_box = (left_crop, 0, left_crop + crop_width, new_height)
+
+    # Crop and resize the image
+    cropped_image = image.crop(crop_box)
+    resized_image = cropped_image.resize(resize_to, Image.ANTIALIAS)
+
+    # Crop and resize the label with nearest neighbor interpolation
+    cropped_label = label.crop(crop_box)
+    resized_label = cropped_label.resize(resize_to, Image.NEAREST)
+
+    return resized_image, resized_label
 
 
 class ImageDataset(Dataset):
@@ -211,7 +334,31 @@ class ImageDataset(Dataset):
         if self.dataset_mode == 'cityscapes':
             arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
 
-        if self.dataset_mode == 'camus':
+        if self.dataset_mode == 'thyroid' or self.dataset_mode == 'liver':
+            if self.dataset_mode == 'liver':
+                # pad the image in height to have a 1:1 aspect ratio
+                width, height = pil_image.size
+                difference = abs(width - height)
+                padding = (0, difference // 2, 0, difference - difference // 2)
+                # Pad the image and make sure the added padding has a mode of 'RGB' for color images
+                # or 'L' for black and white. Here we assume a black padding color.
+                pil_image = ImageOps.expand(pil_image, padding)
+                pil_class = ImageOps.expand(pil_class, padding)
+
+            # augment the image and label
+            if self.is_train:
+                # if random > 0.5, then crop and resize the image and label
+                if random.random() > 0.5:
+                    pil_image, pil_class = random_crop_and_resize_image_label(pil_image, pil_class)
+                    if pil_instance is not None:
+                        pil_instance = pil_instance.resize((self.resolution, self.resolution), Image.NEAREST)
+                # Random horizontal flip with a 50% chance
+                if random.random() > 0.5:
+                    pil_image = pil_image.transpose(Image.FLIP_LEFT_RIGHT)
+                    pil_class = pil_class.transpose(Image.FLIP_LEFT_RIGHT)
+
+        if self.dataset_mode == 'camus' or self.dataset_mode == 'camus_full_2CH' or self.dataset_mode == 'camus_full_4CH' \
+                or self.dataset_mode == 'camus_full_2CH_4CH' or self.dataset_mode == 'thyroid':
             arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution,
                                                             keep_aspect=False)
 

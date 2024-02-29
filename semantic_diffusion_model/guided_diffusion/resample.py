@@ -50,7 +50,7 @@ class ScheduleSampler(ABC):
                  - weights: a tensor of weights to scale the resulting losses.
         """
         w = self.weights()
-        print("numpy array of weights, one per diffusion step")
+        # print("numpy array of weights, one per diffusion step")
         p = w / np.sum(w)
         indices_np = np.random.choice(len(p), size=(batch_size,), p=p)
         indices = th.from_numpy(indices_np).long().to(device)

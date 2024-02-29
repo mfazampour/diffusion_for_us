@@ -99,7 +99,7 @@ def linear_matrix_schedule(num_diffusion_timesteps, matrix_height, matrix_width,
         # with the lowest value being epsilon
         lower_bound = time_factor * (1 - epsilon) + epsilon
 
-        preserved_length = matrix_height * np.min((time_factor, 0.8))  # todo: change 0.8 to a parameter
+        preserved_length = matrix_height * time_factor
         # set to long
         preserved_length = int(preserved_length)
 
@@ -108,12 +108,169 @@ def linear_matrix_schedule(num_diffusion_timesteps, matrix_height, matrix_width,
         bias_matrix[:preserved_length] = 1
         bias_matrix[preserved_length:] = th.linspace(1, lower_bound, steps=matrix_height - preserved_length)
 
+        bias_matrix = th.sqrt(bias_matrix)
+
         bias_matrix = bias_matrix.view(1, 1, matrix_height, 1).repeat(1, channels, 1, matrix_width)
 
         # Assign the bias matrix to the corresponding timestep in the tensor
         all_matrices[t] = bias_matrix
     
     return all_matrices
+
+
+# ------------------------------------- Curvilinear probe b-maps ------------------------------------- #
+
+def point_in_fan(x, y, offset_x, offset_y, short_radius, long_radius, opening_angle_deg):
+    # Convert opening angle from degrees to radians
+    opening_angle_rad = np.deg2rad(opening_angle_deg)
+
+    # Calculate the angle and distance of the point relative to the offset
+    origin = (offset_x, offset_y - short_radius)
+    dx, dy = x - origin[0], y - origin[1]
+    angle = np.arctan2(dx, dy)
+    distance = np.sqrt(dx ** 2 + dy ** 2)
+
+    # Check if the point is within the fan's angle and radius bounds
+    within_angle = np.abs(angle) <= opening_angle_rad
+    within_radius = short_radius <= distance <= long_radius
+
+    # Linear interpolation between 0 and 1 based on distance
+    if within_angle and within_radius:
+        value = distance
+    else:
+        value = -1
+
+    return value
+
+
+def create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_angle, width, height):
+    # Initialize the 2D array
+    distance_map = np.zeros((height, width))
+
+    # Iterate over each point in the array
+    for y in range(height):
+        for x in range(width):
+            distance = point_in_fan(x, y, offset_x, offset_y, short_radius, long_radius, opening_angle)
+            distance_map[y, x] = (distance - short_radius) / (long_radius - short_radius) if distance != -1 else -1
+
+    return distance_map
+
+
+
+def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, matrix_width, channels, epsilon=1):
+    """
+    Get a pre-defined B-maps schedule for the linspace, the only one implemented for now.
+
+    Returns a tensor of matrices, where each matrix's values decrease linearly from 1 to epsilon.
+    The values at the top of the matrix start at 1 and linearly decrease to the factor given by the timestep.
+    At t=0, the matrix is all 1's. At the last timestep, the matrix values are epsilon.
+    Each matrix also includes a channel dimension.
+    The resulting tensor will have a shape of (timesteps, channels, matrix_height, matrix_width).
+    Args:
+        timesteps (int): The number of timesteps.
+        matrix_height (int): The height of each matrix.
+        matrix_width (int): The width of each matrix.
+        channels (int): The number of channels in each matrix.
+        epsilon (float): The smallest value the matrices can take, preventing division by zero in subsequent operations.
+
+    Returns:
+        all_matrices (Tensor): A tensor containing the generated matrices for each timestep.
+    """
+
+    ####
+    # <?xml version="1.0" encoding="utf-8"?>
+    # <propertyfile version="1.1" name="">
+    # 	<property name="FrameGeometryConvex">
+    # 		<param name="offset">494.7 39 </param>
+    # 		<param name="isTopDown">1</param>
+    # 		<param name="indicatorPosition">0</param>
+    # 		<param name="coordinateSystem">0</param>
+    # 		<param name="shortRadius">210.24</param>
+    # 		<param name="longRadius">824.52</param>
+    # 		<param name="openingAngle">35.26</param>
+    # 	</property>
+    # </propertyfile>
+
+    # Define the fan array parameters
+    offset_x, offset_y = 494.7, 39 + 152
+    short_radius = 210.24
+    long_radius = 824.52
+    opening_angle = 35.26
+    oringal_width = 990
+
+    size_ratio = matrix_width / oringal_width
+    offset_x *= size_ratio
+    offset_y *= size_ratio
+    short_radius *= size_ratio
+    long_radius *= size_ratio
+
+    distance_map = create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_angle, matrix_width, matrix_height)
+    distance_map = th.tensor(distance_map, dtype=th.float32)
+
+    # Create a tensor to hold all the matrices
+    all_matrices = th.empty((num_diffusion_timesteps, channels, matrix_height, matrix_width))
+
+    # Iterate through each timestep to create each matrix
+    for t in range(num_diffusion_timesteps):
+        # Scale t from 0 to 1 as time progresses from 0 to timesteps-1
+        time_factor = 1 - t / (num_diffusion_timesteps - 1)
+        # At t=0, we want the bias_matrix to be all 1's,
+        # which is achieved when time_factor is 1
+        # As t increases, the values in the matrix linearly decrease,
+        # with the lowest value being epsilon
+        lower_bound = time_factor * (1 - epsilon) + epsilon
+
+        preserved_ratio = time_factor
+
+        # Create a bias matrix for the current timestep
+        bias_matrix = th.zeros((matrix_height, matrix_width), dtype=th.float32)
+        bias_matrix[(distance_map == -1) | (distance_map < preserved_ratio)] = 1
+
+        idx = distance_map > preserved_ratio
+        bias_matrix[idx] = 1 - (distance_map[idx] - preserved_ratio)/(1 - preserved_ratio + 1e-3) * (1 - lower_bound)
+
+        bias_matrix = th.sqrt(bias_matrix)
+
+        bias_matrix = bias_matrix.view(1, 1, matrix_width, matrix_height)
+
+        # Assign the bias matrix to the corresponding timestep in the tensor
+        all_matrices[t] = bias_matrix
+
+    return all_matrices
+
+####
+# <?xml version="1.0" encoding="utf-8"?>
+# <propertyfile version="1.1" name="">
+# 	<property name="FrameGeometryConvex">
+# 		<param name="offset">494.7 39 </param>
+# 		<param name="isTopDown">1</param>
+# 		<param name="indicatorPosition">0</param>
+# 		<param name="coordinateSystem">0</param>
+# 		<param name="shortRadius">210.24</param>
+# 		<param name="longRadius">824.52</param>
+# 		<param name="openingAngle">35.26</param>
+# 	</property>
+# </propertyfile>
+
+# # Define the fan array parameters
+# offset_x, offset_y = 494.7, 39
+# short_radius = 210.24
+# long_radius = 824.52
+# opening_angle = 35.26
+# width, height = 990, 686  # Size of the array
+#
+# # Create the fan array
+# fan_array = create_fan_array(offset_x, offset_y, short_radius, long_radius, opening_angle, width, height)
+#
+# # Plotting
+# plt.figure(figsize=(8, 6))
+# plt.imshow(fan_array, origin='lower', cmap='gray')
+# plt.colorbar(label='Mask Value')
+# plt.xlabel('X')
+# plt.ylabel('Y')
+# plt.title('Ultrasound Convex Probe Fan Mask Array')
+# plt.show()
+
 
 
 def log_bmaps(map_: th.Tensor, name: str):
@@ -223,6 +380,7 @@ class GaussianDiffusion:
             rescale_timesteps=False,
             image_size=256,
             b_map_min=1.0,
+            dataset_mode="liver",
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -239,7 +397,10 @@ class GaussianDiffusion:
         self.num_timesteps = int(betas.shape[0]) 
 
         # pre-define B-maps
-        self.b_maps = linear_matrix_schedule(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
+        if dataset_mode == "liver":
+            self.b_maps = linear_matrix_schedule_for_c_probe(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
+        else:
+            self.b_maps = linear_matrix_schedule(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
         # remember that in this code they process 3-channel ultrasound images (wrong, but that's what they do)
 
         alphas = 1.0 - betas
@@ -719,6 +880,71 @@ class GaussianDiffusion:
             final = sample
         return final["sample"]
 
+    def p_sample_loop_with_snapshot(
+            self,
+            model,
+            shape,
+            noise=None,
+            clip_denoised=True,
+            denoised_fn=None,
+            cond_fn=None,
+            model_kwargs=None,
+            device=None,
+            progress=False,
+    ):
+        """
+        Generate samples from the model.
+
+        :param model: the model module.
+        :param shape: the shape of the samples, (N, C, H, W).
+        :param noise: if specified, the noise from the encoder to sample.
+                      Should be of the same shape as `shape`.
+        :param clip_denoised: if True, clip x_start predictions to [-1, 1].
+        :param denoised_fn: if not None, a function which applies to the
+            x_start prediction before it is used to sample.
+        :param cond_fn: if not None, this is a gradient function that acts
+                        similarly to the model.
+        :param model_kwargs: if not None, a dict of extra keyword arguments to
+            pass to the model. This can be used for conditioning.
+        :param device: if specified, the device to create the samples on.
+                       If not specified, use a model parameter's device.
+        :param progress: if True, show a tqdm progress bar.
+        :return: a non-differentiable batch of samples.
+        """
+        final = None
+        snapshots = {}  # To store snapshots at 25%, 50%, and 75%
+
+        total_steps = self.num_timesteps
+        checkpoints = [total_steps // 4, total_steps // 2, total_steps * 3 // 4, total_steps * 0.85, total_steps * 0.95]
+
+        for idx, sample in enumerate(self.p_sample_loop_progressive(
+                model,
+                shape,
+                noise=noise,
+                clip_denoised=clip_denoised,
+                denoised_fn=denoised_fn,
+                cond_fn=cond_fn,
+                model_kwargs=model_kwargs,
+                device=device,
+                progress=progress,
+        )):
+            # The idx here starts from 0, so we adjust the calculation accordingly.
+            # Since indices are in reverse, calculate the current progress from the end.
+            current_progress = idx
+
+            # Check if the current progress is close to any of the checkpoints
+            for checkpoint in checkpoints:
+                if abs(current_progress - checkpoint) < 1:
+                    # Save the current sample as a snapshot at the corresponding percentage
+                    percentage = int((current_progress / total_steps) * 100)
+                    snapshots[f"{percentage}%"] = sample["sample"]  # Assuming sample contains the image tensor
+
+            final = sample
+
+        # At this point, `snapshots` will contain the images at approximately 25%, 50%, and 75% of the denoising process,
+        # and `final` will contain the last sample from the loop.
+        return final["sample"], snapshots
+
     def p_sample_loop_progressive(
             self,
             model,
@@ -912,7 +1138,7 @@ class GaussianDiffusion:
         print("shape: the shape of the samples, (N, C, H, W): ", shape)
         print("noise: if specified, the noise from the encoder to sample. Should be of the same shape as `shape`: ", noise.shape)
         print("return a non-differentiable batch of samples: ", final["sample"].shape)
-        return final["sample"]
+        return final["sample"], None
 
     def ddim_sample_loop_progressive(
             self,
