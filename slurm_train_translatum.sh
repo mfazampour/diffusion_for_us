@@ -6,7 +6,7 @@
 #SBATCH --time=0-24:00:00  # Limit on the total run time (format: days-hours:minutes:seconds)
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=8  # Number of CPUs (Don't use more than 12 per GPU)
-#SBATCH --mem=40G  # Memory in GB (Don't use more than 48G per GPU unless you absolutely need it and know what you are doing)
+#SBATCH --mem=48G  # Memory in GB (Don't use more than 48G per GPU unless you absolutely need it and know what you are doing)
 
 # load python module
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -28,13 +28,13 @@ conda activate diff_us
 # --drop_rate 0.0
 
 # thyroid dataset
-#python semantic_diffusion_model/image_train.py --datadir /home/data/farid/THYROID_MULTILABEL_2D_3D/imagesTrain/2D/ --dataset_mode thyroid --savedir output/b-maps --batch_size_train 4 --is_train True \
-#        --random_flip False --deterministic_train False --use_fp16 True --distributed_data_parallel True --img_size 128 --lr_anneal_steps 100000 --num_channels 128 \
-#        --b_map_min 1.0 --save_interval 4000 --lr 1e-5 --fp16_scale_growth 4e-3 --diffusion_steps 4000 \
+python semantic_diffusion_model/image_train.py --datadir /home/data/farid/THYROID_MULTILABEL_2D_3D/imagesTrain/2D/ --dataset_mode thyroid --savedir output/b-maps --batch_size_train 4 --is_train True \
+        --random_flip False --deterministic_train False --use_fp16 True --distributed_data_parallel True --img_size 128 --lr_anneal_steps 100000 --num_channels 128 \
+        --b_map_min 0.97 --save_interval 1000 --lr 1e-5 --fp16_scale_growth 4e-3 --diffusion_steps 1000 \
 #         --resume_checkpoint output/b-maps/dataset_thyroid-b_map_min_1.0-img_size_128-lr_1e-05-diffusion_steps_4000/2024-02-28/model004000.pt
 
 # liver dataset
-python semantic_diffusion_model/image_train.py --datadir /home/data/farid/simulated_images_cs_Demir_Yichen_Daniel/ --dataset_mode liver --savedir output/b-maps --batch_size_train 4 --is_train True \
-        --random_flip False --deterministic_train False --use_fp16 True --distributed_data_parallel True --img_size 128 --lr_anneal_steps 100000 --num_channels 128 \
-        --b_map_min 1.0 --save_interval 4000 --lr 1e-5 --fp16_scale_growth 4e-3 --diffusion_steps 4000 \
-         --resume_checkpoint output/b-maps/dataset_thyroid-b_map_min_1.0-img_size_128-lr_1e-05-diffusion_steps_4000/2024-02-28/model004000.pt
+#python semantic_diffusion_model/image_train.py --datadir /home/data/farid/simulated_images_cs_Demir_Yichen_Daniel/ --dataset_mode liver --savedir output/b-maps --batch_size_train 4 --is_train True \
+#        --random_flip False --deterministic_train False --use_fp16 True --distributed_data_parallel True --img_size 256 --lr_anneal_steps 100000 --num_channels 256 \
+#        --b_map_min 0.97 --save_interval 2000 --lr 1e-5 --fp16_scale_growth 4e-3 --diffusion_steps 2000 \
+#         --resume_checkpoint output/b-maps/dataset_thyroid-b_map_min_1.0-img_size_128-lr_1e-05-diffusion_steps_4000/2024-02-28/model004000.pt
