@@ -156,8 +156,7 @@ def create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_a
     return distance_map
 
 
-
-def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, matrix_width, channels, epsilon=1):
+def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, matrix_width, channels, epsilon=1, dataset_mode='liver'):
     """
     Get a pre-defined B-maps schedule for the linspace, the only one implemented for now.
 
@@ -176,33 +175,10 @@ def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, m
     Returns:
         all_matrices (Tensor): A tensor containing the generated matrices for each timestep.
     """
-
-    ####
-    # <?xml version="1.0" encoding="utf-8"?>
-    # <propertyfile version="1.1" name="">
-    # 	<property name="FrameGeometryConvex">
-    # 		<param name="offset">494.7 39 </param>
-    # 		<param name="isTopDown">1</param>
-    # 		<param name="indicatorPosition">0</param>
-    # 		<param name="coordinateSystem">0</param>
-    # 		<param name="shortRadius">210.24</param>
-    # 		<param name="longRadius">824.52</param>
-    # 		<param name="openingAngle">35.26</param>
-    # 	</property>
-    # </propertyfile>
-
-    # Define the fan array parameters
-    offset_x, offset_y = 494.7, 39 + 152
-    short_radius = 210.24
-    long_radius = 824.52
-    opening_angle = 35.26
-    oringal_width = 990
-
-    size_ratio = matrix_width / oringal_width
-    offset_x *= size_ratio
-    offset_y *= size_ratio
-    short_radius *= size_ratio
-    long_radius *= size_ratio
+    if dataset_mode == 'liver':
+        long_radius, offset_x, offset_y, opening_angle, short_radius = liver_fan_param(matrix_width)
+    elif dataset_mode == 'camus':
+        long_radius, offset_x, offset_y, opening_angle, short_radius = camus_fan_param(matrix_width)
 
     distance_map = create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_angle, matrix_width, matrix_height)
     distance_map = th.tensor(distance_map, dtype=th.float32)
@@ -223,13 +199,15 @@ def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, m
         preserved_ratio = time_factor
 
         # Create a bias matrix for the current timestep
-        bias_matrix = th.zeros((matrix_height, matrix_width), dtype=th.float32)
-        bias_matrix[(distance_map == -1) | (distance_map < preserved_ratio)] = 1
+        bias_matrix = th.ones((matrix_height, matrix_width), dtype=th.float32)
 
         idx = distance_map > preserved_ratio
-        bias_matrix[idx] = 1 - (distance_map[idx] - preserved_ratio)/(1 - preserved_ratio + 1e-3) * (1 - lower_bound)
+        bias_matrix[idx] = 1 - (distance_map[idx] - preserved_ratio)/(1 - preserved_ratio + 1e-6) * (1 - lower_bound)
 
         bias_matrix = th.sqrt(bias_matrix)
+
+        if (bias_matrix == 0).sum() > 0:
+            print('b_maps != 0')
 
         bias_matrix = bias_matrix.view(1, 1, matrix_width, matrix_height)
 
@@ -238,39 +216,60 @@ def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, m
 
     return all_matrices
 
-####
-# <?xml version="1.0" encoding="utf-8"?>
-# <propertyfile version="1.1" name="">
-# 	<property name="FrameGeometryConvex">
-# 		<param name="offset">494.7 39 </param>
-# 		<param name="isTopDown">1</param>
-# 		<param name="indicatorPosition">0</param>
-# 		<param name="coordinateSystem">0</param>
-# 		<param name="shortRadius">210.24</param>
-# 		<param name="longRadius">824.52</param>
-# 		<param name="openingAngle">35.26</param>
-# 	</property>
-# </propertyfile>
 
-# # Define the fan array parameters
-# offset_x, offset_y = 494.7, 39
-# short_radius = 210.24
-# long_radius = 824.52
-# opening_angle = 35.26
-# width, height = 990, 686  # Size of the array
-#
-# # Create the fan array
-# fan_array = create_fan_array(offset_x, offset_y, short_radius, long_radius, opening_angle, width, height)
-#
-# # Plotting
-# plt.figure(figsize=(8, 6))
-# plt.imshow(fan_array, origin='lower', cmap='gray')
-# plt.colorbar(label='Mask Value')
-# plt.xlabel('X')
-# plt.ylabel('Y')
-# plt.title('Ultrasound Convex Probe Fan Mask Array')
-# plt.show()
+def camus_fan_param(matrix_width):
+    #### camus
+    # <?xml version="1.0" encoding="utf-8"?>
+    # <propertyfile version="1.1" name="">
+    # 	<property name="FrameGeometryConvex">
+    # 		<param name="offset">128 0 </param>
+    # 		<param name="isTopDown">1</param>
+    # 		<param name="indicatorPosition">0</param>
+    # 		<param name="coordinateSystem">0</param>
+    # 		<param name="shortRadius">0</param>
+    # 		<param name="longRadius">250</param>
+    # 		<param name="openingAngle">32.1003690834937</param>
+    # 	</property>
+    # </propertyfile>
+    # Define the fan array parameters
+    offset_x, offset_y = 128, 0
+    short_radius = 0
+    long_radius = 250
+    opening_angle = 32.1003690834937
+    original_width = 256
+    size_ratio = matrix_width / original_width
+    offset_x *= size_ratio
+    offset_y *= size_ratio
+    short_radius *= size_ratio
+    long_radius *= size_ratio
+    return long_radius, offset_x, offset_y, opening_angle, short_radius
 
+def liver_fan_param(matrix_width):
+    #### liver
+    # <?xml version="1.0" encoding="utf-8"?>
+    # <propertyfile version="1.1" name="">
+    # 	<property name="FrameGeometryConvex">
+    # 		<param name="offset">494.7 39 </param>
+    # 		<param name="isTopDown">1</param>
+    # 		<param name="indicatorPosition">0</param>
+    # 		<param name="coordinateSystem">0</param>
+    # 		<param name="shortRadius">210.24</param>
+    # 		<param name="longRadius">824.52</param>
+    # 		<param name="openingAngle">35.26</param>
+    # 	</property>
+    # </propertyfile>
+    # Define the fan array parameters
+    offset_x, offset_y = 494.7, 39 + 152
+    short_radius = 210.24
+    long_radius = 824.52
+    opening_angle = 35.26
+    original_width = 990
+    size_ratio = matrix_width / original_width
+    offset_x *= size_ratio
+    offset_y *= size_ratio
+    short_radius *= size_ratio
+    long_radius *= size_ratio
+    return long_radius, offset_x, offset_y, opening_angle, short_radius
 
 
 def log_bmaps(map_: th.Tensor, name: str):
@@ -397,7 +396,7 @@ class GaussianDiffusion:
         self.num_timesteps = int(betas.shape[0]) 
 
         # pre-define B-maps
-        if dataset_mode == "liver":
+        if dataset_mode == "liver" or "camus" in dataset_mode:
             self.b_maps = linear_matrix_schedule_for_c_probe(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
         else:
             self.b_maps = linear_matrix_schedule(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
@@ -1050,11 +1049,11 @@ class GaussianDiffusion:
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
         )  # no noise when t == 0
         sample = mean_pred + nonzero_mask * sigma * noise
-        print("ddim_sample function")
-        print("x: the current tensor at x_{t-1}: ", x.shape)
-        print("t: the value of t, starting at 0 for the first diffusion step: ", t)
-        print("sample: a random sample from the model: ", sample.shape)
-        print("pred_xstart: a prediction of x_0: ", out["pred_xstart"].shape)
+        # print("ddim_sample function")
+        # print("x: the current tensor at x_{t-1}: ", x.shape)
+        # print("t: the value of t, starting at 0 for the first diffusion step: ", t)
+        # print("sample: a random sample from the model: ", sample.shape)
+        # print("pred_xstart: a prediction of x_0: ", out["pred_xstart"].shape)
 
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
@@ -1093,11 +1092,11 @@ class GaussianDiffusion:
                 out["pred_xstart"] * th.sqrt(alpha_bar_next)
                 + th.sqrt(1 - alpha_bar_next) * eps
         )
-        print("ddim_reverse_sample function")
-        print("x: the current tensor at x_{t-1}: ", x.shape)
-        print("t: the value of t, starting at 0 for the first diffusion step: ", t)
-        print("sample: mean_pred: a random sample from the model: ", mean_pred.shape)
-        print("pred_xstart: a prediction of x_0: ", out["pred_xstart"].shape)
+        # print("ddim_reverse_sample function")
+        # print("x: the current tensor at x_{t-1}: ", x.shape)
+        # print("t: the value of t, starting at 0 for the first diffusion step: ", t)
+        # print("sample: mean_pred: a random sample from the model: ", mean_pred.shape)
+        # print("pred_xstart: a prediction of x_0: ", out["pred_xstart"].shape)
 
         return {"sample": mean_pred, "pred_xstart": out["pred_xstart"]}
 
@@ -1134,10 +1133,10 @@ class GaussianDiffusion:
         ):
             final = sample
 
-        print("ddim_sample_loop function")
-        print("shape: the shape of the samples, (N, C, H, W): ", shape)
-        print("noise: if specified, the noise from the encoder to sample. Should be of the same shape as `shape`: ", noise.shape)
-        print("return a non-differentiable batch of samples: ", final["sample"].shape)
+        # print("ddim_sample_loop function")
+        # print("shape: the shape of the samples, (N, C, H, W): ", shape)
+        # print("noise: if specified, the noise from the encoder to sample. Should be of the same shape as `shape`: ", noise.shape)
+        # print("return a non-differentiable batch of samples: ", final["sample"].shape)
         return final["sample"], None
 
     def ddim_sample_loop_progressive(
@@ -1166,6 +1165,8 @@ class GaussianDiffusion:
             img = noise
         else:
             img = th.randn(*shape, device=device)
+        if 'y' in model_kwargs:
+            model_kwargs['y'] = model_kwargs['y'].to(device)
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:

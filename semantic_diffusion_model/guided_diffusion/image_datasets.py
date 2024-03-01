@@ -358,7 +358,7 @@ class ImageDataset(Dataset):
                     pil_class = pil_class.transpose(Image.FLIP_LEFT_RIGHT)
 
         if self.dataset_mode == 'camus' or self.dataset_mode == 'camus_full_2CH' or self.dataset_mode == 'camus_full_4CH' \
-                or self.dataset_mode == 'camus_full_2CH_4CH' or self.dataset_mode == 'thyroid':
+                or self.dataset_mode == 'camus_full_2CH_4CH' or self.dataset_mode == 'thyroid' or self.dataset_mode == 'liver':
             arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution,
                                                             keep_aspect=False)
 

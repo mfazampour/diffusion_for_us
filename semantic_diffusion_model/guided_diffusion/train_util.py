@@ -484,12 +484,15 @@ class TrainLoop:
         # label_img = (cond['label_ori'].float())
         model_kwargs = cond
 
-        inference_img, snapshots = self.diffusion.p_sample_loop_with_snapshot(
-            self.model,
-            (batch.shape[0], 3, batch.shape[2], batch.shape[3]),
-            model_kwargs=model_kwargs,
-            progress=True
-        )
+        with th.no_grad():
+            self.model.eval()
+            inference_img, snapshots = self.diffusion.p_sample_loop_with_snapshot(
+                self.model,
+                (batch.shape[0], 3, batch.shape[2], batch.shape[3]),
+                model_kwargs=model_kwargs,
+                progress=True
+            )
+            self.model.train()
 
         inference_img = (inference_img + 1) / 2.0
         log_images(inference_img=inference_img, src_img=src_img, snapshots=snapshots)
