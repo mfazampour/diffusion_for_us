@@ -82,7 +82,22 @@ class SpacedDiffusion(GaussianDiffusion):
                 new_betas.append(1 - alpha_cumprod / last_alpha_cumprod)
                 last_alpha_cumprod = alpha_cumprod
                 self.timestep_map.append(i)
+
         kwargs["betas"] = np.array(new_betas)
+
+        # do the same for b-maps
+        if len(self.use_timesteps) != len(base_diffusion.betas):
+            # we need to adjust the b-maps
+            last_matrix_cumprod = th.ones(3, base_diffusion.image_size, base_diffusion.image_size, dtype=base_diffusion.b_cumprod[0].dtype)
+            new_b_maps = []
+            for i, b_map_cumprod in enumerate(base_diffusion.b_cumprod):
+                if i in self.use_timesteps:
+                    new_b_maps.append(b_map_cumprod / last_matrix_cumprod) # because we don't need to substract one for the definition of b-maps
+                    last_matrix_cumprod = b_map_cumprod
+                    # we have already appended the timesteps in the betas, so we don't need to do it again
+
+            kwargs["b_maps"] = th.stack(new_b_maps)
+
         super().__init__(**kwargs)
 
     def p_mean_variance(

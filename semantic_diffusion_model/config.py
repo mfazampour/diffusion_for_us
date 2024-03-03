@@ -25,6 +25,8 @@ __C.TRAIN.DIFFUSION.PREDICT_XSTART = False # why not?
 __C.TRAIN.DIFFUSION.RESCALE_TIMESTEPS = False
 __C.TRAIN.DIFFUSION.RESCALE_LEARNED_SIGMAS = False
 __C.TRAIN.DIFFUSION.B_MAP_MIN = 1.0
+__C.TRAIN.DIFFUSION.PRESERVE_LENGTH = False
+__C.TRAIN.B_MAP_SCHEDULER_TYPE = "cosine"
 
 __C.TRAIN.IMG_SIZE = 128 #256
 __C.TRAIN.NUM_CLASSES = 5
@@ -32,12 +34,12 @@ __C.TRAIN.LR = 1e-4
 __C.TRAIN.ATTENTION_RESOLUTIONS = "32,16,8"
 __C.TRAIN.CHANNEL_MULT = None
 __C.TRAIN.DROPOUT = 0.0
-__C.TRAIN.DIFFUSION_STEPS = 1000 
+__C.TRAIN.DIFFUSION_STEPS = 1000
 __C.TRAIN.SCHEDULE_SAMPLER = "uniform"
 __C.TRAIN.NUM_CHANNELS = 128 #256
 __C.TRAIN.NUM_HEADS = 1
 __C.TRAIN.NUM_HEADS_UPSAMPLE = -1
-__C.TRAIN.NUM_HEAD_CHANNELS = 64 
+__C.TRAIN.NUM_HEAD_CHANNELS = 64
 __C.TRAIN.NUM_RES_BLOCKS = 2
 __C.TRAIN.RESBLOCK_UPDOWN = True
 __C.TRAIN.USE_SCALE_SHIFT_NORM = True
@@ -53,7 +55,7 @@ __C.TRAIN.LOG_INTERVAL = 100  # After 10 steps are completed it checks the logge
 __C.TRAIN.SAVE_INTERVAL = 5000 # After the 1000 steps are completed it saves the model.
 __C.TRAIN.RESUME_CHECKPOINT = None #"output/sdm_checkpoint/ema_0.9999_050000_2ch_ed_256.pt"  # optional, if you want to resume training from a checkpoint
 __C.TRAIN.USE_FP16 = True
-__C.TRAIN.DISTRIBUTED_DATA_PARALLEL = True # this was true before, but we need it to be false so it runs in the cuda gpu 
+__C.TRAIN.DISTRIBUTED_DATA_PARALLEL = True # this was true before, but we need it to be false so it runs in the cuda gpu
 __C.TRAIN.USE_NEW_ATTENTION_ORDER = True
 __C.TRAIN.FP16_SCALE_GROWTH = 1e-3
 __C.TRAIN.NUM_WORKERS = 8
@@ -190,6 +192,10 @@ def update_config(args, _cfg):
         _cfg.TRAIN.CHECKPOINT_DIR = args.output_dir
     if args.b_map_min is not None:
         _cfg.TRAIN.DIFFUSION.B_MAP_MIN = args.b_map_min
+    if args.b_map_scheduler_type is not None:
+        _cfg.TRAIN.B_MAP_SCHEDULER_TYPE = args.b_map_scheduler_type
+    if args.preserve_length is not None:
+        _cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH = args.preserve_length
 
 
 def add_base_args(parser, _cfg):
@@ -396,6 +402,12 @@ def add_base_args(parser, _cfg):
     parser.add_argument('--b_map_min',
                         default=_cfg.TRAIN.DIFFUSION.B_MAP_MIN,
                         type=float)
+    parser.add_argument('--b_map_scheduler_type',
+                        default=_cfg.TRAIN.B_MAP_SCHEDULER_TYPE,
+                        type=str)
+    parser.add_argument('--preserve_length',
+                        default=_cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH,
+                        type=str2bool)
 
 
 def str2bool(v):

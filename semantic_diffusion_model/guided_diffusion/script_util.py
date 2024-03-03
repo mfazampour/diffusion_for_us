@@ -30,6 +30,7 @@ def create_model_and_diffusion(cfg):
         steps=cfg.TRAIN.DIFFUSION_STEPS,
         learn_sigma=cfg.TRAIN.DIFFUSION.LEARN_SIGMA,
         noise_schedule=cfg.TRAIN.DIFFUSION.NOISE_SCHEDULE,
+        b_map_scheduler_type=cfg.TRAIN.B_MAP_SCHEDULER_TYPE,
         use_kl=cfg.TRAIN.DIFFUSION.USE_KL,
         predict_xstart=cfg.TRAIN.DIFFUSION.PREDICT_XSTART,
         rescale_timesteps=cfg.TRAIN.DIFFUSION.RESCALE_TIMESTEPS,
@@ -38,6 +39,7 @@ def create_model_and_diffusion(cfg):
         image_size=cfg.TRAIN.IMG_SIZE,
         b_map_min=cfg.TRAIN.DIFFUSION.B_MAP_MIN,
         dataset_mode=cfg.DATASETS.DATASET_MODE,
+        preserve_length=cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH,
     )
     return model, diffusion
 
@@ -110,6 +112,7 @@ def create_gaussian_diffusion(
         learn_sigma=False,
         sigma_small=False,
         noise_schedule="linear",
+        b_map_scheduler_type="linear",
         use_kl=False,
         predict_xstart=False,
         rescale_timesteps=False,
@@ -118,8 +121,10 @@ def create_gaussian_diffusion(
         image_size=256,
         b_map_min=1.0,
         dataset_mode="liver",
+        preserve_length=False,
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
+    b_betas = gd.get_named_bmap_schedule(b_map_scheduler_type, steps)
     print("Get a pre-defined beta schedule for Linear: ")
     if use_kl: # False
         loss_type = gd.LossType.RESCALED_KL
@@ -132,6 +137,7 @@ def create_gaussian_diffusion(
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
         betas=betas,
+        b_betas=b_betas,
         model_mean_type=(
             gd.ModelMeanType.EPSILON if not predict_xstart else gd.ModelMeanType.START_X
         ),
@@ -149,6 +155,7 @@ def create_gaussian_diffusion(
         image_size=image_size,
         b_map_min=b_map_min,
         dataset_mode=dataset_mode,
+        preserve_length=preserve_length,
     )
 
 

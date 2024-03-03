@@ -42,6 +42,14 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
             num_diffusion_timesteps,
             lambda t: math.cos((t + 0.008) / 1.008 * math.pi / 2) ** 2,
         )
+    if schedule_name == "linear_small":
+        # only can be used with b-maps in effect
+        scale = 1000 / num_diffusion_timesteps
+        beta_start = scale * 0.0001
+        beta_end = scale * 0.001
+        return np.linspace(
+            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+        )
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
@@ -67,7 +75,34 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
 
 # ------------------------------------- B-maps scheduler ------------------------------------- #
 
-def linear_matrix_schedule(num_diffusion_timesteps, matrix_height, matrix_width, channels, epsilon=1):
+
+def get_named_bmap_schedule(b_map_scheduler_type, num_diffusion_timesteps):
+    """
+    Get a pre-defined B-maps schedule for the given name.
+
+    The B-maps schedule library consists of B-maps schedules which remain similar
+    in the limit of num_diffusion_timesteps.
+    B-maps schedules may be added, but should not be removed or changed once
+    they are committed to maintain backwards compatibility.
+    """
+    b_beta = np.zeros(num_diffusion_timesteps, dtype=np.float64)
+    for t in range(num_diffusion_timesteps):
+        if b_map_scheduler_type == "linear":
+            b_beta[t] = (t + 1e-8) / (num_diffusion_timesteps - 1)
+        elif b_map_scheduler_type == "cosine":
+            phase = ((t + 0.008) / (1.008 * num_diffusion_timesteps)) * (math.pi / 2)
+            b_beta[t] = (1 - math.cos(phase)) ** 2
+        elif b_map_scheduler_type == "normal_cosine":
+            b_beta[t] = (1 - math.cos(t / (num_diffusion_timesteps - 1) * math.pi)) / 2
+        elif b_map_scheduler_type == "sqrt":
+            b_beta[t] = ((t + 1e-8) / (num_diffusion_timesteps - 1)) ** 0.5
+        else:
+            raise NotImplementedError(f"unknown B-maps schedule: {b_map_scheduler_type}")
+    return b_beta
+
+
+def matrix_schedule_for_linear_probe(matrix_height, matrix_width, channels, b_betas, epsilon=1, preserve_length=False,
+                                     bottom_to_top=False):
     """
     Get a pre-defined B-maps schedule for the linspace, the only one implemented for now.
 
@@ -81,34 +116,40 @@ def linear_matrix_schedule(num_diffusion_timesteps, matrix_height, matrix_width,
         matrix_height (int): The height of each matrix.
         matrix_width (int): The width of each matrix.
         channels (int): The number of channels in each matrix.
+        b_betas (np.array): The betas for each timestep.
         epsilon (float): The smallest value the matrices can take, preventing division by zero in subsequent operations.
+        preserve_length (bool): If True, the length of the preserved part of the matrix is proportional to the time factor.
+        bottom_to_top (bool): If True, the matrix values decrease from bottom to top, instead of top to bottom. This is used only for sanity checks.
     
     Returns:
         all_matrices (Tensor): A tensor containing the generated matrices for each timestep.
     """
     # Create a tensor to hold all the matrices
-    all_matrices = th.empty((num_diffusion_timesteps, channels, matrix_height, matrix_width))
+    all_matrices = th.empty((b_betas.shape[0], channels, matrix_height, matrix_width))
+    lower_bounds = 1 - b_betas * (1 - epsilon)
 
     # Iterate through each timestep to create each matrix
-    for t in range(num_diffusion_timesteps):
-        # Scale t from 0 to 1 as time progresses from 0 to timesteps-1
-        time_factor = 1 - t / (num_diffusion_timesteps - 1)
-        # At t=0, we want the bias_matrix to be all 1's,
-        # which is achieved when time_factor is 1
-        # As t increases, the values in the matrix linearly decrease,
-        # with the lowest value being epsilon
-        lower_bound = time_factor * (1 - epsilon) + epsilon
+    for t, b_beta in enumerate(b_betas):
 
-        preserved_length = matrix_height * time_factor
-        # set to long
-        preserved_length = int(preserved_length)
+        time_factor = b_beta
+
+        # If the preserve_length flag is set, the length of the preserved part of the matrix is proportional to the time factor
+        if preserve_length:
+            preserved_length = matrix_height * (1 - time_factor)
+            # set to long
+            preserved_length = int(preserved_length)
+        else:
+            preserved_length = 0
 
         # Create a bias matrix for the current timestep
-        bias_matrix = th.zeros(matrix_height, dtype=th.float32)
-        bias_matrix[:preserved_length] = 1
-        bias_matrix[preserved_length:] = th.linspace(1, lower_bound, steps=matrix_height - preserved_length)
+        bias_matrix = th.ones(matrix_height, dtype=th.float32)
+        bias_matrix[preserved_length:] = th.linspace(1, lower_bounds[t], steps=matrix_height - preserved_length)
 
         bias_matrix = th.sqrt(bias_matrix)
+
+        # If the bottom_to_top flag is set, the matrix values decrease from bottom to top
+        if bottom_to_top:
+            bias_matrix = bias_matrix.flip(0)
 
         bias_matrix = bias_matrix.view(1, 1, matrix_height, 1).repeat(1, channels, 1, matrix_width)
 
@@ -156,7 +197,7 @@ def create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_a
     return distance_map
 
 
-def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, matrix_width, channels, epsilon=1, dataset_mode='liver'):
+def matrix_schedule_for_convex_probe(matrix_height, matrix_width, channels, b_betas, epsilon=1, dataset_mode='liver', preserve_length=False):
     """
     Get a pre-defined B-maps schedule for the linspace, the only one implemented for now.
 
@@ -166,12 +207,13 @@ def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, m
     Each matrix also includes a channel dimension.
     The resulting tensor will have a shape of (timesteps, channels, matrix_height, matrix_width).
     Args:
-        timesteps (int): The number of timesteps.
         matrix_height (int): The height of each matrix.
         matrix_width (int): The width of each matrix.
         channels (int): The number of channels in each matrix.
+        b_betas (np.array): The betas for each timestep.
         epsilon (float): The smallest value the matrices can take, preventing division by zero in subsequent operations.
-
+        dataset_mode (str): The dataset mode, either 'liver' or 'camus'.
+        preserve_length (bool): If True, the length of the preserved part of the matrix is proportional to the time factor.
     Returns:
         all_matrices (Tensor): A tensor containing the generated matrices for each timestep.
     """
@@ -179,35 +221,36 @@ def linear_matrix_schedule_for_c_probe(num_diffusion_timesteps, matrix_height, m
         long_radius, offset_x, offset_y, opening_angle, short_radius = liver_fan_param(matrix_width)
     elif dataset_mode == 'camus':
         long_radius, offset_x, offset_y, opening_angle, short_radius = camus_fan_param(matrix_width)
+    else:
+        raise ValueError('Invalid dataset mode')
 
     distance_map = create_distance_map(offset_x, offset_y, short_radius, long_radius, opening_angle, matrix_width, matrix_height)
     distance_map = th.tensor(distance_map, dtype=th.float32)
 
     # Create a tensor to hold all the matrices
-    all_matrices = th.empty((num_diffusion_timesteps, channels, matrix_height, matrix_width))
+    # Create a tensor to hold all the matrices
+    all_matrices = th.empty((b_betas.shape[0], channels, matrix_height, matrix_width))
+    lower_bounds = 1 - b_betas * (1 - epsilon)
 
     # Iterate through each timestep to create each matrix
-    for t in range(num_diffusion_timesteps):
-        # Scale t from 0 to 1 as time progresses from 0 to timesteps-1
-        time_factor = 1 - t / (num_diffusion_timesteps - 1)
-        # At t=0, we want the bias_matrix to be all 1's,
-        # which is achieved when time_factor is 1
-        # As t increases, the values in the matrix linearly decrease,
-        # with the lowest value being epsilon
-        lower_bound = time_factor * (1 - epsilon) + epsilon
+    for t, b_beta in enumerate(b_betas):
+        time_factor = b_beta
 
-        preserved_ratio = time_factor
+        if preserve_length:
+            preserved_ratio = 1 - time_factor
+        else:
+            preserved_ratio = 0
 
         # Create a bias matrix for the current timestep
         bias_matrix = th.ones((matrix_height, matrix_width), dtype=th.float32)
 
-        idx = distance_map > preserved_ratio
-        bias_matrix[idx] = 1 - (distance_map[idx] - preserved_ratio)/(1 - preserved_ratio + 1e-6) * (1 - lower_bound)
+        idx = distance_map >= preserved_ratio
+        bias_matrix[idx] = 1 - (distance_map[idx] - preserved_ratio)/(1 - preserved_ratio + 1e-6) * (1 - lower_bounds[t])
 
         bias_matrix = th.sqrt(bias_matrix)
 
-        if (bias_matrix == 0).sum() > 0:
-            print('b_maps != 0')
+        # make sure there are no 0s in the matrix
+        assert (bias_matrix == 0).sum() == 0
 
         bias_matrix = bias_matrix.view(1, 1, matrix_width, matrix_height)
 
@@ -373,6 +416,7 @@ class GaussianDiffusion:
             self,
             *,
             betas,
+            b_betas,
             model_mean_type,
             model_var_type,
             loss_type,
@@ -380,6 +424,8 @@ class GaussianDiffusion:
             image_size=256,
             b_map_min=1.0,
             dataset_mode="liver",
+            b_maps=None,
+            preserve_length=False,
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -393,14 +439,26 @@ class GaussianDiffusion:
         assert len(betas.shape) == 1, "betas must be 1-D"
         assert (betas > 0).all() and (betas <= 1).all() # "betas must be in (0, 1]"
 
+        b_betas = np.array(b_betas, dtype=np.float64)
+        self.b_betas = b_betas
+        assert len(b_betas.shape) == 1, "b_betas must be 1-D"
+        # assert (b_betas > 0).all() and (b_betas <= 1).all() # "b_betas must be in (0, 1]" # not necessary
+        # assert b_betas.shape[0] == betas.shape[0], "b_betas must have the same length as betas"
+
         self.num_timesteps = int(betas.shape[0]) 
 
         # pre-define B-maps
-        if dataset_mode == "liver" or "camus" in dataset_mode:
-            self.b_maps = linear_matrix_schedule_for_c_probe(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
+        if b_maps is not None:
+            self.b_maps = b_maps
         else:
-            self.b_maps = linear_matrix_schedule(self.num_timesteps, self.image_size, self.image_size, 3, epsilon=b_map_min)
-        # remember that in this code they process 3-channel ultrasound images (wrong, but that's what they do)
+            if dataset_mode == "liver" or "camus" in dataset_mode:
+                self.b_maps = matrix_schedule_for_convex_probe(self.image_size, self.image_size, 3, b_betas=b_betas,
+                                                               epsilon=b_map_min, dataset_mode=dataset_mode,
+                                                               preserve_length=preserve_length)
+            else:
+                self.b_maps = matrix_schedule_for_linear_probe(self.image_size, self.image_size, 3, b_betas=b_betas,
+                                                               epsilon=b_map_min, preserve_length=preserve_length)
+            # remember that in this code they process 3-channel ultrasound images (wrong, but that's what they do)
 
         alphas = 1.0 - betas
         self.alphas = alphas
@@ -623,7 +681,7 @@ class GaussianDiffusion:
                 model_log_variance = frac * max_log + (1 - frac) * min_log
                 model_variance = th.exp(model_log_variance)
                 
-        else:
+        else:  # FIXED_LARGE, FIXED_SMALL -> b-maps are not implemented for this case yet (todo)
             print("GOING INSIDE THE SECOND ELSE STATEMENT")
             print("Not implemented, we don't use this one")
             
