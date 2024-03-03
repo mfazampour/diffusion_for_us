@@ -348,7 +348,7 @@ class ImageDataset(Dataset):
             # augment the image and label
             if self.is_train:
                 # if random > 0.5, then crop and resize the image and label
-                if random.random() > 0.5:
+                if random.random() > 0.5 and self.dataset_mode != 'liver' and 'camus' not in self.dataset_mode:
                     pil_image, pil_class = random_crop_and_resize_image_label(pil_image, pil_class)
                     if pil_instance is not None:
                         pil_instance = pil_instance.resize((self.resolution, self.resolution), Image.NEAREST)

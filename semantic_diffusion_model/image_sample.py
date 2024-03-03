@@ -90,6 +90,9 @@ def main():
 
     model.eval()
 
+    if not os.path.exists(cfg.TEST.RESULTS_DIR):
+        os.makedirs(cfg.TEST.RESULTS_DIR, exist_ok=True)
+
     image_path = os.path.join(cfg.TEST.RESULTS_DIR, 'images')
     os.makedirs(image_path, exist_ok=True)
     label_path = os.path.join(cfg.TEST.RESULTS_DIR, 'labels')

@@ -300,7 +300,7 @@ class TrainLoop:
    
     def run_step(self, batch, cond):
         # print("Running the step")
-        logger.log("Running the step: forward, backward, optimize")
+        # logger.log("Running the step: forward, backward, optimize")
         self.forward_backward(batch, cond)
         # loss = self.forward_backward(batch, cond) 
         took_step = self.mp_trainer.optimize(self.opt)
