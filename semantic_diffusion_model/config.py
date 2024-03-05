@@ -26,6 +26,7 @@ __C.TRAIN.DIFFUSION.RESCALE_TIMESTEPS = False
 __C.TRAIN.DIFFUSION.RESCALE_LEARNED_SIGMAS = False
 __C.TRAIN.DIFFUSION.B_MAP_MIN = 1.0
 __C.TRAIN.DIFFUSION.PRESERVE_LENGTH = False
+__C.TRAIN.DIFFUSION.ADD_BUFFER = False
 __C.TRAIN.B_MAP_SCHEDULER_TYPE = "cosine"
 
 __C.TRAIN.IMG_SIZE = 128 #256
@@ -196,6 +197,8 @@ def update_config(args, _cfg):
         _cfg.TRAIN.B_MAP_SCHEDULER_TYPE = args.b_map_scheduler_type
     if args.preserve_length is not None:
         _cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH = args.preserve_length
+    if args.add_buffer is not None:
+        _cfg.TRAIN.DIFFUSION.ADD_BUFFER = args.add_buffer
 
 
 def add_base_args(parser, _cfg):
@@ -407,6 +410,9 @@ def add_base_args(parser, _cfg):
                         type=str)
     parser.add_argument('--preserve_length',
                         default=_cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH,
+                        type=str2bool)
+    parser.add_argument('--add_buffer',
+                        default=_cfg.TRAIN.DIFFUSION.ADD_BUFFER,
                         type=str2bool)
 
 

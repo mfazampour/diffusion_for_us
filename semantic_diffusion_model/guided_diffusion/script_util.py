@@ -40,6 +40,7 @@ def create_model_and_diffusion(cfg):
         b_map_min=cfg.TRAIN.DIFFUSION.B_MAP_MIN,
         dataset_mode=cfg.DATASETS.DATASET_MODE,
         preserve_length=cfg.TRAIN.DIFFUSION.PRESERVE_LENGTH,
+        add_buffer=cfg.TRAIN.DIFFUSION.ADD_BUFFER,
     )
     return model, diffusion
 
@@ -122,9 +123,10 @@ def create_gaussian_diffusion(
         b_map_min=1.0,
         dataset_mode="liver",
         preserve_length=False,
+        add_buffer=False,
 ):
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
-    b_betas = gd.get_named_bmap_schedule(b_map_scheduler_type, steps)
+    b_betas = gd.get_named_bmap_schedule(b_map_scheduler_type, steps, add_buffer=add_buffer)
     print("Get a pre-defined beta schedule for Linear: ")
     if use_kl: # False
         loss_type = gd.LossType.RESCALED_KL

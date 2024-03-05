@@ -274,7 +274,7 @@ class TrainLoop:
             # and we are optimizing the loss function
             # so we are training the UNet, updating the parameters and saving the model 
 
-            print("Step: ", self.step + self.resume_step, ". Logging metrics to wandb...")
+            # print("Step: ", self.step + self.resume_step, ". Logging metrics to wandb...")
             
             kvs = logger.getkvs()
 

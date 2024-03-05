@@ -76,7 +76,7 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
 # ------------------------------------- B-maps scheduler ------------------------------------- #
 
 
-def get_named_bmap_schedule(b_map_scheduler_type, num_diffusion_timesteps):
+def get_named_bmap_schedule(b_map_scheduler_type, num_diffusion_timesteps, add_buffer=False):
     """
     Get a pre-defined B-maps schedule for the given name.
 
@@ -86,7 +86,14 @@ def get_named_bmap_schedule(b_map_scheduler_type, num_diffusion_timesteps):
     they are committed to maintain backwards compatibility.
     """
     b_beta = np.zeros(num_diffusion_timesteps, dtype=np.float64)
+    if add_buffer:  # add a buffer at the beginning of the schedule and set the first values to epsilon
+        buffer = int(0.05 * num_diffusion_timesteps)
+        b_beta[:buffer] = 1e-8
+        b_beta[buffer:] = get_named_bmap_schedule(b_map_scheduler_type, num_diffusion_timesteps - buffer, add_buffer=False)
+        return b_beta
+
     for t in range(num_diffusion_timesteps):
+
         if b_map_scheduler_type == "linear":
             b_beta[t] = (t + 1e-8) / (num_diffusion_timesteps - 1)
         elif b_map_scheduler_type == "cosine":
@@ -219,7 +226,7 @@ def matrix_schedule_for_convex_probe(matrix_height, matrix_width, channels, b_be
     """
     if dataset_mode == 'liver':
         long_radius, offset_x, offset_y, opening_angle, short_radius = liver_fan_param(matrix_width)
-    elif dataset_mode == 'camus':
+    elif 'camus' in dataset_mode:
         long_radius, offset_x, offset_y, opening_angle, short_radius = camus_fan_param(matrix_width)
     else:
         raise ValueError('Invalid dataset mode')
@@ -1285,7 +1292,6 @@ class GaussianDiffusion:
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
     def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
-        print("Compute training losses for a single timestep.")
         """
         Compute training losses for a single timestep.
 
