@@ -11,7 +11,6 @@ cfg = __C
 
 __C.DATASETS = edict()
 __C.DATASETS.DATADIR = 'augmented_camus/2CH_ED_augmented'
-# inputs_dir = "/home/data/farid/simulated_images_cs_Demir_Yichen_Daniel/Daniel/Daniel/IFL-SET1-FILTERED/"
 __C.DATASETS.SAVE_DIR = 'output/diffusion' #'output/sdm_train'
 __C.DATASETS.DATASET_MODE = 'camus'
 
