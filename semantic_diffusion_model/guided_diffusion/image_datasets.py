@@ -140,7 +140,6 @@ def load_data(cfg, single_image_path=None):
             path2_label) + _list_image_files_recursively(path3_label) + _list_image_files_recursively(path4_label)
         instances = None
     elif cfg.DATASETS.DATASET_MODE == 'thyroid':
-        # this should be the base path : "/home/data/farid/THYROID_MULTILABEL_2D_3D/imagesTrain/2D"
         all_files = []
         classes = []
         for i in range(0, 29, 2):
@@ -158,7 +157,6 @@ def load_data(cfg, single_image_path=None):
 
         instances = None
     elif cfg.DATASETS.DATASET_MODE == 'liver':
-        # this should be the base path : "/home/data/farid/simulated_images_cs_Demir_Yichen_Daniel/"
         all_files = _list_image_files_recursively(os.path.join(cfg.DATASETS.DATADIR, 'filtered'))
         # we have only the fan mask as the label, it is the same for all the images
         classes = [os.path.join(cfg.DATASETS.DATADIR, "fan_mask.png") for _ in all_files]

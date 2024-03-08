@@ -133,11 +133,6 @@ class TrainLoop:
             self.use_ddp = False
             self.ddp_model = self.model
 
-        # Initialize W&B
-        # wandb.init(project="camus_remote", entity="marinadomin")
-        # Optionally add a unique name or additional configuration for the run
-
-
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
 
